@@ -324,10 +324,462 @@ ends
         
         code ends
         end start
-        	
         ```
-
         
 
+      
+      
+      + int指令
+      
+        ```
+        assume cs:code
+        
+        code segment
+        	s1: db 'Good,better,best,','$'
+        	s2: db 'Never let it rest,','$'
+        	s3: db 'Till good is better,','$'
+        	s4: db 'And better,best.','$'
+        	s:  dw offset s1,offset s2,offset s3,offset s4
+        	row:db 2,4,6,8
+        	
+        start:
+        	mov ax,cs
+        	mov ds,ax
+        	mov bx,offset s
+        	mov si,offset row
+        	mov cx,4
+        ok:
+        	mov bh,0
+        	mov dh,[si]
+        	mov dl,0
+        	mov ah,2
+        	int 10h
+        
+        	mov dx,[bx]
+        	mov ah,9
+        	int 21h
+        	inc si
+        	add bx,2
+        	loop ok
+        	
+        	mov ax,4c00h
+        	int 21h
+        code ends
+        end start
+        ```
+      
+      
 
+### 端口
+
++ 端口的读写 ==(在in和out指令中,只能使用ax或al来存放数据)==
+
+  ```
+  in al,60h  ;从60h端口读入一个字节
+  out 20h,al ;往20h端口写入一个字节
+  ```
+
++ 逻辑移位指令
+
+  ```
+  shl 标号,标号 ;将一个寄存器或内存单元中的数据向左移位,最后移出的一位写入CF中,最低位用0补充
+  shr 标号,标号 ;将一个寄存器或内存单元中的数据向右移位,最后移出的一位写入CF中,最高位用0补充
+  如果移动位数大于1时,必须将移动位数放在cl中
+  mov al,01010001b
+  mov cl,3
+  shl al,cl
+  ```
+
++ CMOS RAM芯片
+
+  + 端口地址为70h和71h
+  + 70h为地址端口
+  + 71h为数据端口
+
+```
+assume cs:code
+
+data segment
+	db '9,8,7,4,2,0'
+data ends
+
+stack segment
+	db 8 dup (0)
+stack ends
+
+code segment
+
+start:
+	mov ax,stack
+	mov ss,ax
+	mov sp,0
+
+	mov ax,data
+	mov ds,ax
+	mov si,0
+
+	mov bx,0b800h
+	mov es,bx
+	mov di,2000
+
+	mov cx,6
+s:	
+	push cx
+	mov bl,[si]
+	sub bl,30h
+	mov byte ptr al,bl
+	out 70h,al
+	in al,71h
+	
+	mov ah,al	
+	mov cl,4
+	shr ah,cl
+	and al,00001111b
+	
+	add ah,30h
+	add al,30h
+	
+	mov byte ptr es:[di],ah
+	add di,2
+	mov byte ptr es:[di],al
+	add di,2
+	
+	add si,2
+	pop cx
+	loop s	
+
+
+	mov ax,4c00h
+	int 21h
+code ends
+end start
+```
+
+
+
+### 外中断
+
+1. #### 可屏蔽中断
+
+   ```
+   如果IF=1,当CPU检测到可屏蔽中断信息时，则CPU在执行完当前命令后响应中断.如果IF=0,则不响应可屏蔽中断
+   sti  ;设置IF=1
+   cli  ;设置IF=0
+   ```
+
+   
+
+2. #### 不可屏蔽中断
+
+
+
+### 直接定址表
+
+```
+assume cs:code
+
+
+code segment
+start:
+	mov ax,cs
+	mov ds,ax
+	mov si,offset setscreen       ;ds:[si]指向源地址
+	mov ax,0
+	mov es,ax
+	mov di,200h		;es:[di]指向目标地址
+	mov cx,offset setscreenend-offset setscreen	;cx计算出地址长度
+	cld			;方向为正
+	rep movsb
+	
+	mov ax,0
+	mov es,ax
+	mov word ptr es:[7ch*4],200h
+	mov word ptr es:[7ch*4+2],0		;设置中断向量
+	
+
+	mov ax,0002h
+	int 7ch
+	
+	mov ax,4c00h
+	int 21h
+
+setscreen:
+	jmp short set
+	table dw sub1,sub2,sub3,sub4
+set:
+	push bx
+	cmp ah,3
+	ja sret
+	mov bl,ah
+	mov bh,0
+	add bx,bx
+	
+	call word ptr table[bx]	
+	
+sret:
+	pop bx
+	iret
+
+
+
+
+sub1:
+	push bx
+	push cx
+	push es
+	mov bx,0b800h	
+	mov es,bx
+	mov bx,0
+	mov cx,2000
+sub1s:
+	mov byte ptr es:[bx],' '
+	add bx,2
+	loop sub1s
+	pop es
+	pop cx
+	pop bx
+	ret
+
+sub2:
+	push bx
+	push cx
+	push es
+	mov bx,0b800h	
+	mov es,bx
+	mov bx,1
+	mov cx,2000
+sub2s:
+	and byte ptr es:[bx],11110000b
+	or es:[bx],al
+	add bx,2
+	loop sub2s
+
+	pop es
+	pop cx
+	pop bx
+	ret
+
+sub3:
+	push bx
+	push cx
+	push es
+	mov cl,4
+	shl al,cl
+	mov bx,0b800h	
+	mov es,bx
+	mov bx,1
+	mov cx,2000
+sub3s:
+	and byte ptr es:[bx],10001111b
+	or es:[bx],al
+	add bx,2
+	loop sub3s
+
+	pop es
+	pop cx
+	pop bx
+	ret
+
+sub4:
+	push si
+	push di
+	push ds
+	push cx
+	push es
+	
+	mov si,0b800h
+	mov es,si
+	mov ds,si
+	mov si,160
+	mov di,0
+	cld
+	mov cx,24
+
+sub4s:
+	push cx
+	mov cx,160
+	rep movsb
+	pop cx
+	loop sub4s
+		
+	mov cx,80
+	mov si,0
+sub4s1:
+	mov byte ptr [160*24+si],' '
+	add si,2
+	loop sub4s1
+
+	pop es
+	pop cx
+	pop ds
+	pop di
+	pop si
+	ret
+
+setscreenend: nop
+
+code ends
+end start
+```
+
+### BIOS进行键盘输入和磁盘读写
+
+##### 根据用户输入设置屏幕颜色
+
+```
+assume cs:code
+
+code segment
+
+start:
+	mov ah,0
+	int 16h
+
+	mov ah,1
+	cmp al,'r'
+	je red
+	cmp al,'g'
+	je green
+	cmp al,'b'
+	je blue
+	jmp short sret
+red:
+	shl ah,1
+green:
+	shl ah,1
+blue:
+	mov bx,0b800h
+	mov es,bx
+	mov bx,1
+	mov cx,2000
+s:
+	and byte ptr es:[bx],11111000b
+	or es:[bx],ah
+	add bx,2
+	loop s
+sret:
+	mov ax,4c00h
+	int 21h
+code ends
+end start
+```
+
+##### 字符串输入
+
+```
+assume cs:code
+
+code segment
+start:
+	
+	call getstr		;输入字符串
+	mov ax,4c00h	;程序结束 返回值0
+	int 21h
+
+getstr:
+	push ax		
+getstrs:
+	mov ah,0		
+	int 16h		;读取键盘缓冲区
+	cmp al,20h	
+	jb nochar		;ASCLL码小于20 不是字母
+	mov ah,0
+	call charstack	;字符入栈
+	mov ah,2
+	call charstack	;显示字符
+	jmp getstrs	;获取下一个字符
+
+nochar:
+	cmp ah,0eh	
+	je backspace	;退格键键码
+	cmp ah,1ch
+	je enter		;回车键键码
+	jmp getstrs	;获取下一个字符
+
+backspace:
+	mov ah,1
+	call charstack	;字符出栈
+	mov ah,2
+	call charstack	;重新显示字符
+	jmp getstrs	;获取下一个字符
+
+enter:
+	mov al,0		;添加字符串结束标志0
+	mov ah,0
+	call charstack	;字符0入栈
+	mov ah,2
+	call charstack	;重新显示字符
+	pop ax
+	ret		;子程序返回
+
+charstack:
+	jmp short charstart		
+table	dw charpush,charpop,charshow	;功能表
+top	dw 0			;栈顶
+
+charstart:
+	push bx
+	push dx
+	push di
+	push es
+	
+	cmp ah,2		
+	ja sret		;无效输入退出
+	mov bl,ah
+	mov bh,0
+	add bx,bx
+	jmp word ptr table[bx] 	;根据ah值调用子程序
+
+charpush:		;字符入栈
+	mov bx,top
+	mov [si][bx],al
+	inc top
+	jmp sret
+
+charpop:		;字符出栈
+	cmp top,0
+	je sret		栈为空 无法出栈
+	dec top
+	mov bx,top
+	mov al,[si][bx]
+	jmp sret
+
+charshow:
+	mov bx,0b800h
+	mov es,bx
+	mov dx,1230h
+	mov al,160
+	mov ah,0
+	mul dh
+	mov di,ax		
+	add dl,dl
+	mov dh,0
+	add di,dx		;es:[di]指向B800:160*12+30*2
+	
+	mov bx,0		;bx指向栈底
+
+charshows:
+	cmp bx,top
+	jne noempty 	;将栈中字符显示在屏幕上
+	mov byte ptr es:[di],' '
+	jmp sret
+
+noempty:
+	mov al,[si][bx]
+	mov es:[di],al
+	mov byte ptr es:[di+2],' '
+	inc bx
+	add di,2
+	jmp charshows
+
+sret:
+	pop es
+	pop di
+	pop dx
+	pop bx
+	ret
+
+code ends
+end start
+```
 
